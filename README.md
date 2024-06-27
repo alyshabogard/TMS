@@ -1,4 +1,4 @@
-# TMS
+# TMS (in MATLAB)
 
 Able-bodied subjects participated in a pre-post study design to assess changes in corticospinal excitability to the tibialis anterior muscle after five consecutive days of AIH. We generated recruitment curves by plotting the peak-to-peak MEP amplitudes against the normalized stimulus intensities based on the participant’s resting motor threshold. To assess changes in corticospinal excitability, we quantified TMS indices such as changes in the maximum MEP amplitude (MEPmax), the area under the recruitment curve (AUC), the peak slope of the recruitment curve, and resting motor threshold (RMT). 
 
