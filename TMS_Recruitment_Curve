@@ -1,118 +1,131 @@
-% This script loads TMS recruitment curve (RC) and MVC data, normalizes it, 
-% computes the MEP response, and fits a Boltzmann curve for visualization.
+%% Recruitment Curve & MVC Analysis
 
 clear; clc; close all;
 
-% Define subjects
-numSubjects = 13;
-subjectIDs = arrayfun(@(x) sprintf('%02d', x), 1:numSubjects, 'UniformOutput', false);
-
-% Initialize structures to store data
-preData = struct();
-postData = struct();
-
 % ---------------------------
-% LOAD DATA AUTOMATICALLY
+% AUTOMATED DATA IMPORT
 % ---------------------------
-for i = 1:numSubjects
-    preLabel = strcat(subjectIDs{i}, '_pre');
-    postLabel = strcat(subjectIDs{i}, '_post');
+% Find all .xlsx files in the directory
+matfiles = dir('*.xlsx');
+N = length(matfiles);
 
-    % Load pre and post data
-    [preData(i).T, preData(i).MVC] = SMRLoadAll(preLabel);
-    [postData(i).T, postData(i).MVC] = SMRLoadAll(postLabel);
+% Preallocate structs for efficiency
+RC = struct('name', '', 'data', []);
+MVC = struct('name', '', 'data', []);
+bgNoise = [];
+
+% Load data dynamically
+for i = 1:N
+    filename = matfiles(i).name;
+    data = importdata(filename);
     
-    % Compute means for each frame state
-    preData(i).T = MeansArray(preData(i).T);
-    postData(i).T = MeansArray(postData(i).T);
+    if contains(filename, 'RC')
+        RC(i).name = filename;
+        RC(i).data = data.data;
+        
+        % Compute background noise
+        bgNoise(i) = min(data.data(:,3)); 
+        
+    elseif contains(filename, 'MVC')
+        MVC(i).name = filename;
+        MVC(i).data = data.data;
+    end
 end
 
 % ---------------------------
-% COMPUTE NORMALIZED RESPONSES & BOLTZMANN FIT
+% COMPILE MVC DATA
 % ---------------------------
+IDs = extractBetween({MVC.name}, 2, 3);
+Pre_MVC = cellfun(@(x) x(:,2)', {MVC(contains({MVC.name}, 'pre')).data}, 'UniformOutput', false);
+Post_MVC = cellfun(@(x) x(:,2)', {MVC(contains({MVC.name}, 'post')).data}, 'UniformOutput', false);
+
+Pre_MVCmean = mean(cell2mat(Pre_MVC), 2);
+Post_MVCmean = mean(cell2mat(Post_MVC), 2);
+
+% Save MVC data to CSV
+M = table(IDs', Pre_MVCmean, Post_MVCmean);
+writetable(M, 'MVC.csv');
+
+% ---------------------------
+% COMPUTE RECRUITMENT CURVE METRICS
+% ---------------------------
+numSubjects = length(RC) / 2;
+preResults = struct();
+postResults = struct();
+
 for i = 1:numSubjects
-    preData(i).MEP = computeMEP(preData(i).T);
-    postData(i).MEP = computeMEP(postData(i).T);
+    preResults(i) = computeRecruitmentCurve(RC(i).data);
+    postResults(i) = computeRecruitmentCurve(RC(i + numSubjects).data);
+end
+
+% Save recruitment curve results
+T = struct2table(preResults);
+writetable(T, 'Pre_RC_Results.csv');
+T = struct2table(postResults);
+writetable(T, 'Post_RC_Results.csv');
+
+% ---------------------------
+% PLOTTING
+% ---------------------------
+graphics = questdlg("Do you want to generate plots?", "Plotter", "Yes", "No", "No");
+plotter = strcmp(graphics, "Yes");
+
+if plotter
+    for i = 1:numSubjects
+        figure;
+        hold on;
+        prePlot = GraphRC(preResults(i).data, "Pre");
+        postPlot = GraphRC(postResults(i).data, "Post");
+        legend([prePlot, postPlot], "Pre", "Post");
+        title(sprintf("Subject %s: Pre vs Post Recruitment Curve", IDs{i}));
+    end
 end
 
 % ---------------------------
-% AVERAGE DATA ACROSS SUBJECTS
+% FUNCTION: Compute Recruitment Curve Metrics
 % ---------------------------
-preAvT = MeansArray(cell2mat(arrayfun(@(x) x.T, preData, 'UniformOutput', false)'));
-postAvT = MeansArray(cell2mat(arrayfun(@(x) x.T, postData, 'UniformOutput', false)'));
-
-% ---------------------------
-% VISUALIZATION: AVERAGED PRE & POST DATA
-% ---------------------------
-figure;
-hold on;
-GraphRC(preAvT, 'Pre (Average)');
-GraphRC(postAvT, 'Post (Average)');
-legend("Pre", "Post");
-title("Recruitment Curve Pre vs. Post");
-
-% ---------------------------
-% FUNCTION: Compute MEP from RC Data
-% ---------------------------
-function mep = computeMEP(T)
+function result = computeRecruitmentCurve(T)
     % Background subtraction
-    bg = min(T(:,2));
-    T(:,2) = T(:,2) - bg;
+    bg = min(T(:,3));
+    T(:,3) = T(:,3) - bg;
 
-    % Compute MEP
-    mep = max(T(:,2));
-end
+    % Extract MEP values
+    MEPmax = max(T(:,3));
+    MEP100 = mean(T(T(:,2) == 100, 3));
+    MEP120 = mean(T(T(:,2) == 120, 3));
+    MEP140 = mean(T(T(:,2) == 140, 3));
 
-% ---------------------------
-% FUNCTION: Graphing Recruitment Curve
-% ---------------------------
-function GraphRC(T, conditionLabel)
-    % Extract peak-to-peak MEP response
-    mV = T(:,2);
-
-    % Boltzmann curve fitting parameters
-    mep = max(mV);
-    k = mep / (4 * max(diff(mV)));
+    % Boltzmann fitting
+    k = MEPmax / (4 * max(diff(T(:,3))));
     s = 1:0.01:6;
-    s50 = 4; % Default threshold for sigmoidal fit
+    s50 = 4;  % Default threshold
+    y = MEPmax ./ (1 + exp((s50 - s) ./ k));
 
-    % Compute Boltzmann curve
-    y = mep ./ (1 + exp((s50 - s) ./ k));
+    % Area under curve
+    auc = trapz(s, y);
 
-    % Plot data
-    scatter(1:6, mV, 'filled');
-    plot(s, y, 'LineWidth', 2);
-    xlabel('Frame State');
-    ylabel('Peak-to-Peak MEP (mV)');
-    title(conditionLabel);
+    % Store results
+    result = struct('MEPmax', MEPmax, 'MEP100', MEP100, 'MEP120', MEP120, 'MEP140', MEP140, 'AUC', auc, 'data', T);
 end
 
 % ---------------------------
-% FUNCTION: Compute Mean for Each Frame State
+% FUNCTION: Plot Recruitment Curve
 % ---------------------------
-function A = MeansArray(T)
-    A = splitapply(@mean, T, findgroups(T(:,1)));
-end
+function p = GraphRC(T, label)
+    mV = T(:,3);
+    scatter(T(:,2), mV, 'filled');
+    hold on;
 
-% ---------------------------
-% FUNCTION: Load Recruitment Curve & MVC Data
-% ---------------------------
-function [RC, MVC] = SMRLoadAll(N)
-    RC = SMRLoadRC(N);
-    MVC = SMRLoadMVC(N);
-end
+    % Boltzmann curve fitting
+    MEPmax = max(mV);
+    k = MEPmax / (4 * max(diff(mV)));
+    s = 1:0.01:6;
+    s50 = 4;
+    y = MEPmax ./ (1 + exp((s50 - s) ./ k));
 
-% ---------------------------
-% FUNCTION: Load Recruitment Curve Data
-% ---------------------------
-function Data = SMRLoadRC(N)
-    Data = readtable(['sham/n', N, '_RC.xlsx']);
-    Data = rmoutliers(sortrows(table2array(Data(:,2:3)), "State", "ascend"), "mean");
-end
-
-% ---------------------------
-% FUNCTION: Load MVC Data
-% ---------------------------
-function Data = SMRLoadMVC(N)
-    Data = max(table2array(readtable(['sham/n', N, '_MVC.xlsx']))(:,2)); % Extract max value (MVC)
+    % Plot curve
+    p = plot(s, y, 'LineWidth', 2);
+    xlabel('% RMT');
+    ylabel('MEP Amplitude (mV)');
+    title(label);
 end
