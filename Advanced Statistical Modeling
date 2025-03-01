@@ -1,0 +1,89 @@
+# Bayesian Analysis for TMS Recruitment Curve
+
+# Load required packages
+library(pacman)
+p_load(knitr, tidyverse, magrittr, writexl, readxl, effsize, pwr, car, lme4, emmeans, ggpubr, rstatix, 
+       stats, nlme, multcomp, lmerTest, drc, dataPreparation, gridExtra, ez, sjPlot, sjmisc, sjlabelled, 
+       performance, GGally, rgl, brms, bayestestR, loo)
+
+# Load dataset
+dfl <- read_excel("dfl.xlsx") 
+dfl$Time <- factor(dfl$Time, levels = c("Pre", "Post"))
+
+# ---------------------------
+# BAYESIAN REGRESSION MODEL 1 (Including BG)
+# ---------------------------
+model <- brm(
+  log_MEP ~ Time + BG + (1 | ID),  # Fixed effects: Time, BG; Random effect: ID
+  data = dfl,
+  family = gaussian(),               # Gaussian likelihood
+  prior = c(
+    prior(normal(0, 1), class = "b"),               # Prior for fixed effects
+    prior(student_t(3, 0, 2.5), class = "sigma"),   # Prior for residual SD
+    prior(student_t(3, 0, 2.5), class = "Intercept") # Prior for intercept
+  ),
+  iter = 4000, chains = 4, cores = 4, seed = 1234   # MCMC settings
+)
+
+# ---------------------------
+# POSTERIOR CHECKS & MODEL VALIDATION
+# ---------------------------
+plot(model)        # Visualize posterior distributions
+pp_check(model)    # Perform posterior predictive checks
+
+# ---------------------------
+# MODEL SUMMARY & HYPOTHESIS TESTING
+# ---------------------------
+summary(model)  # Summarize results
+
+# Hypothesis tests
+hypothesis(model, "TimePost > 0")  # Test if log_MEP increases post-AIH
+hypothesis(model, "BG > 0")        # Test if BG influences log_MEP
+
+# ---------------------------
+# BAYESIAN REGRESSION MODEL 2 (Excluding BG)
+# ---------------------------
+model2 <- brm(
+  log_MEP ~ Time + (1 | ID),
+  data = dfl,
+  family = gaussian(),
+  prior = c(
+    prior(normal(0, 1), class = "b"),
+    prior(student_t(3, 0, 2.5), class = "sigma"),
+    prior(student_t(3, 0, 2.5), class = "Intercept")
+  ),
+  iter = 4000, chains = 4, cores = 4, seed = 1234
+)
+
+# ---------------------------
+# MODEL COMPARISON
+# ---------------------------
+loo(model, model2)  # LOO-CV comparison
+
+# Bayesian R²
+bayes_R2(model)   # Model 1 (with BG)
+bayes_R2(model2)  # Model 2 (without BG)
+
+# ---------------------------
+# FREQUENTIST VALIDATION
+# ---------------------------
+lm_model <- lm(log_MEP ~ BG, data = dfl %>% filter(Time == 'Post'))  # Linear model
+
+# Summarize frequentist model
+summary(lm_model)
+
+# Save visualization
+library(ggplot2)
+bgmep <- ggplot(dfl, aes(x = BG, y = log_MEP, fill = Time)) +
+  geom_point(size = 5, shape = 21, color = "black") +  # Black outline
+  theme_classic() +
+  theme(legend.position = "top",
+        plot.title = element_text(hjust = 0.5)) +
+  labs(x = "Background EMG (mV)", y = "Log-transformed MEP") +
+  scale_x_continuous(limits = c(0.01, 0.090)) +  # Lower x limit set to 0.01
+  scale_fill_manual(values = c("Pre" = "grey", "Post" = "#009fd3"))  # Ensure values match factor levels
+
+bgmep
+
+# Save plot
+ggsave("MEPvBG.pdf", bgmep, device = "pdf")
