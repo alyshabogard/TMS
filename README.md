@@ -23,3 +23,25 @@ The script:
 - Required toolboxes:  
   - `Curve Fitting Toolbox` (for Boltzmann curve fitting)  
   - `Statistics and Machine Learning Toolbox`  
+
+# Bayesian Analysis of TMS Recruitment Curve 📊
+
+## Overview
+This repository contains a **Bayesian statistical analysis pipeline** for investigating **motor evoked potential (MEP) responses** pre and post **AIH intervention** using **brms** in R. 
+The script:  
+- Implements **Bayesian regression modeling** to assess the impact of **time (pre vs. post-AIH) and background EMG (BG)** on log-transformed MEP amplitudes (**log_MEP**).  
+- Uses **posterior distributions, credible intervals (CIs), and hypothesis testing** to quantify uncertainty.  
+- Compares **two models (with and without BG)** using **LOO cross-validation** and **Bayesian R²**.  
+- Performs **posterior predictive checks (PPCs)** to evaluate model fit.  
+
+## Features
+✅ **Bayesian mixed-effects regression** (random effect: subject ID)  
+✅ **Custom prior distributions** for regularization  
+✅ **Posterior predictive checks (PPCs) to validate model assumptions**  
+✅ **Hypothesis testing via posterior probabilities**  
+✅ **Model comparison using LOO-CV & Bayesian R²**  
+✅ **Frequentist linear regression for validation**  
+
+## Dependencies
+- **R version 4.0+**
+- Required packages: `brms`, `bayestestR`, `loo`, `ggplot2`, `tidyverse`, `lme4`  
